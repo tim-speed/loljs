@@ -2,6 +2,41 @@
   
 var examples = Array();
 
+examples['square root'] = "HAI\n\
+I HAS A NUMBER\n\
+GIMMEH NUMBER\n\
+NUMBER IS NOW A NUMBAR\n\
+I HAS A IMAGINARY ITZ FAIL\n\
+\n\
+NUMBER SMALLR THAN 0.0?, O RLY?\n\
+  YA RLY\n\
+      NUMBER R PRODUKT OF NUMBER AN -1\n\
+      IMAGINARY R WIN\n\
+OIC\n\
+\n\
+I HAS A X_N ITZ 10\n\
+I HAS A LIMIT ITZ 100\n\
+I HAS A COUNTER ITZ 0\n\
+IM IN YR LOOP UPPIN YR COUNTER WILE COUNTER SMALLR THAN LIMIT?\n\
+  I HAS A TERM ITZ QUOSHUNT OF NUMBER AN X_N\n\
+  TERM R SUM OF X_N AN TERM\n\
+  TERM R QUOSHUNT OF TERM AN 2\n\
+  X_N R TERM\n\
+  IM OUTTA YR LOOP\n\
+\n\
+BOTH SAEM IMAGINARY AN WIN, O RLY?\n\
+  YA RLY\n\
+    BOTH SAEM 1 AN X_N, O RLY? \n\
+      YA RLY\n\
+        X_N R \"i\"\n\
+      NO WAI\n\
+        X_N R SMOOSH \"(\" AN X_N AN \"i)\" MKAY\n\
+  OIC\n\
+OIC\n\
+\n\
+VISIBLE SMOOSH \"sqrt(\" AN NUMBER AN \") ~ ±\" AN X_N\n\
+KTHXBYE\n"
+
 
 examples['loop'] = "HAI\n\
 CAN HAS STDIO?\n\
