@@ -37,7 +37,57 @@ OIC\n\
 VISIBLE SMOOSH \"sqrt(\" AN NUMBER AN \") ~ ±\" AN X_N\n\
 KTHXBYE\n"
 
+examples['escape sequences'] = "HAI\n\
+BTW we're going to look at some escape sequences\n\
+I HAS A VAR ITZ 12\n\
+BTW interpolation\n\
+I HAS A STR ITZ \"MY VAR IS :{VAR}\"\n\
+VISIBLE STR\n\
+BTW unicode\n\
+VISIBLE \"---\"\n\
+VISIBLE \"I LIKE :(03C0)\"\n\
+\n\
+BTW escaping works by the : character.\n\
+BTW escaping a quote:\n\
+VISIBLE \"---\"\n\
+VISIBLE \"I SAID :\"hello:\" to him\"\n\
+BTW escaping newlines, and tabs\n\
+VISIBLE \"---\"\n\
+VISIBLE \"I SAID:):>:\"hello:\":)to him\"\n\
+KTHXBYE\n\
+";
 
+examples['operators'] = "HAI\n\
+BTW operators use prefix notation which looks like this:\n\
+I HAS A X\n\
+BTW (1*2) + (3/4)\n\
+X R SUM OF PRODUKT OF 1 AN 2 AN QUOSHUNT OF 3 AN 4\n\
+VISIBLE \"X IS :{X}\"\n\
+\n\
+\n\
+BTW there are also some infinite arity operators (terminated by MKAY):\n\
+BTW here we nest the nary ANY OF inside the binary BOTH SAEM\n\
+\n\
+VISIBLE BOTH SAEM ANY OF WIN AN FAIL AN FAIL AN FAIL MKAY AN WIN\n\
+\n\
+\n\
+BTW we can define our own functions which work a lot like operators\n\
+BTW we can nest function calls inside operator expressions:\n\
+BTW define an XOR\n\
+HOW DUZ I XOR YR ARG1 AN YR ARG2\n\
+  I HAS A X ITZ NOT BOTH SAEM ARG1 AN ARG2\n\
+  X R BOTH OF X AN EITHER OF ARG1 AN ARG2\n\
+  FOUND YR X\n\
+IF U SAY SO\n\
+\n\
+BTW SMOOSH is an infinite arity concatenation operator\n\
+VISIBLE SMOOSH \"XOR 1 AN 0 = \" AN XOR 1 0 MKAY\n\
+\n\
+BTW now we use the function in a more complex expression:\n\
+BTW this reads: 'xor(0+1, 0) + 2' = 3\n\
+VISIBLE SUM OF XOR SUM OF 0 AN 1 AN 0 AN 2\n\
+KTHXBYE\n\
+";
 examples['loop'] = "HAI\n\
 CAN HAS STDIO?\n\
 I HAS A VAR\n\

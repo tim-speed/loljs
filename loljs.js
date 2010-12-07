@@ -1,426 +1,832 @@
 /*
- * Copyright <2010> <Mark Watkinson>. All rights reserved.
+Copyright (c) <2010>, Mark Watkinson
+All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification, are
-permitted provided that the following conditions are met:
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the <organization> nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
 
-   1. Redistributions of source code must retain the above copyright notice, this list of
-      conditions and the following disclaimer.
-
-   2. Redistributions in binary form must reproduce the above copyright notice, this list
-      of conditions and the following disclaimer in the documentation and/or other materials
-      provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY <Mark Watkinson> ``AS IS'' AND ANY EXPRESS OR IMPLIED
-WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL <Mark Watkinson> OR
-CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
-ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-The views and conclusions contained in the software and documentation are those of the
-authors and should not be interpreted as representing official policies, either expressed
-or implied, of <Mark Watkinson>.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL MARK WATKINSON BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
-
-/* loljs.js: a LOLCODE to JavaScript translator
- * 
- * usage note:
- * you have to define your own 'puts' function to display stdout. This should look something like:
- * function puts(string, newline)
- * { 
- *      document.getElementById('stdout').innerHTML += string + ((newline==true)? '<br>' : ''); 
- * }
- */
-
 /*
- * Instructions:
- * call loljs(your_lol_code)
- * then eval() the return
- */
-
-
-/* 
- * TODO: "any of"/"all of" operators,
- * operator precedence may not be right, or (as I suspect) in the instance that there is no defined 'right', sensible.
+ * loljs 1.1 
+ * a LOLCODe to JavaScript translator
  * 
- * array support (BUKKIT)
+ * 
+ * Usage:
+ * 
+ * var js = loljs(lolcode);
+ * eval(js);
+ * 
+ * 
+ * you might also want to set the puts function otherwise stdout all goes to
+ * alert() boxes, which is somewhat irritating.
+
+lolspace_set_puts(function puts(str, newline){
+  var stdout = document.getElementById('stdout');
+  str = str.replace(/&/g, '&amp;').replace(/>/g, '&gt;').replace(/</g, '&lt;');
+  stdout.innerHTML +=  str + ((newline !== false)? '<br>' : '');
+});
+
  */
 
 
+var lolspace_user_functions = [];
+var lolspace_errored = false;
+var lolspace_puts_cb = null;
 
-// keep a list of user defined functions so we know when to 'link' calls to them.
-var lolspace_user_def_func_names = [];
-
-
-// Simple substitutions in the form array( regex, sub, regex2, sub2, ...)
-
-var lolspace_ASSIGNMENT = [
-  'I HAS A ([a-zA-Z0-9_]+) IT[SZ] (.*)', 'var $1 = $2',
-  'I HAS A ([a-zA-Z0-9_]+)', 'var $1 = null',
-  '([a-zA-Z0-9_]+) R (.*)', '$1=$2'  
-]
-  
-var lolspace_OTHER = [
-  'VISIBLE (.*)!\s*$', 'puts($1, false)',    
-  'VISIBLE (.*)', 'puts($1)',    
-  '(G[EI]MMEH ([a-zA-Z0-9_]+))', '$2=prompt("$1")',
-  'WIN', 'true',
-  'FAIL', 'false',
-  'FOUND [UY]R (.*)', 'return $1',
-  'CAN HAS .*', ''
-  
-]
-
-  var lolspace_CONTROL = [
-  'O RLY\\?', '',
-  'YA RLY', 'if(IT){',
-  'NO WAI', '}else{',
-  'MEBBE (.*)', '}else if($1){',
-  'OIC', '}',
-
-  'UPPIN YR ([a-zA-Z0-9_]+)', '$1+1 YR $1',
-  'NERFIN YR ([a-zA-Z0-9_]+)', '$1-1 YR $1',
-
-  'IM IN YR [a-zA-Z0-9_]+ (.*) YR ([a-zA-Z0-9]+) TIL (.*)', 'for( ; !($3); $2=$1){',
-  'IM IN YR [a-zA-Z0-9_]+ (.*) YR ([a-zA-Z0-9]+) WILE (.*)', 'for( ; $3; $2=$1){',
-  'IM IN YR [a-zA-Z0-9_]+', 'while(1){',
-  
-
-  'IM OUTTA YR .*', '}',  
-  'GTFO', 'break;',
-  
-  '\s*(.*?)\s*WTF\\?', 'switch($1){',
-  'OMG (.*)', 'case $1:',
-  'OMGWTF', 'default:',
-  
-  'IF U SAY SO', 'return IT;}',
-  'IZ (.*)', 'if($1){',
-  'KTHX$', '}'
-
-  ]
-  
-  // these should probably be bracketed for precedence, although i'm not sure and the spec doesn't really clear things
-  // up
-  var lolspace_MATH_OPS = [
-  'SUM OF ([^\\s]+) AN (.*)', '$1+$2',
-  'DIFF OF ([^\\s]+) AN (.*)', '$1-$2',
-  'PRODUKT OF ([^\\s]+) AN (.*)', '$1*$2',
-  'MOD OF ([^\\s]+) AN (.*)', '$1%$2',
-  'QUOSHUNT OF ([^\\s]+) AN (.*)', '$1/$2',
-  'BIGGR OF ([^\\s]+) AN (.*)', 'Math.max($1,$2)',
-  'SMALLR OF ([^\\s]+) AN (.*)', 'Math.min($1,$2)',
-  
-  'UP[Z]? ([a-zA-Z0-9_]+)!*(\\d+)$', '$1+=$2',
-  'UP[Z]? ([a-zA-Z0-9_])!*', '$1++',
-  '(\\w+) BIG[G]?[E]?R THAN (.*?)\\?', '$1>$2',
-  '(\\w+) SMAL[L]?[E]?R THAN (.*?)\\?', '$1<$2'
-  ]
-
-  var lolspace_LOGIC_OPS = [
-   'BOTH OF ([^\\s]+) AN (.*)', '$1&&($2)',
-   'EITHER OF ([^\\s]+) AN (.*)', '$1||($2)',
-   'WON OF ([^\\s]+) AN (.*)', '$1||($2)&&!($1&&($2))',
-   'NOT (.*)', '!($1)',
-   'BOTH SAEM ([a-zA-Z0-9_]+) AN (.*)', '$1==($2)',
-   'DIFFRINT ([^\\s]+) AN (.*)', '$1!=($2)'
-  ]
-  
-
-
-
-
-
-function lolspace_sub_func_def(str)
+// It's easier to define an XOR function here than to do it in place 
+// when parsing the operators.
+function lolspace_xor(op1, op2)
 {
-  if (str.indexOf('HOW DUZ I') == -1)
-    return str;
-  var s = str.replace(/^\s+/g, '').split(' ');
-  
-  var func_name = s[3];
-  lolspace_user_def_func_names.push(func_name);
-  var arg_list = [];
-  for (var i=4; i<s.length; i++)
+  return !!((op1 || op2) && !(op1 && op2));
+}
+
+
+function lolspace_puts(str, newline)
+{
+  str = "" + str;
+  if (lolspace_puts_cb != null)
+    lolspace_puts_cb(str, newline);
+  else
+    alert(str);
+}
+
+
+function lolspace_set_puts(func)
+{
+  lolspace_puts_cb = func;
+}
+
+// prints an error which occurred during parsing
+function lolspace_error(errstr)
+{
+  if (!lolspace_errored || lolspace_puts_cb != null)
+    lolspace_puts("loljs hit an error, sorry!\n" + errstr);
+  lolspace_errored = true;
+}
+
+// inits the lolspace, call this before parsing anything.
+function lolspace_init()
+{
+  lolspace_errored = false;
+  lolspace_user_functions = [];
+}
+
+// returns true iff funcname is a user defined function inside 
+// the lolcode
+function lolspace_is_func(funcname)
+{
+  for (var i=0; i<lolspace_user_functions.length; i++)
   {
-    if (s[i] != 'YR' && s[i] != 'AN')
-      arg_list.push(s[i]);
+    if (lolspace_user_functions[i].name == funcname)
+      return true;
   }
-  return 'function ' + func_name + '(' + arg_list.join(',') + '){';
+  return false;
 }
-
-function lolspace_sub_func_call(str)
+// returns the number of arguments a user defined function
+// takes, or logical false if it's not a function.
+function lolspace_func_get_num_args(funcname)
 {
-  for (var i=0; i<lolspace_user_def_func_names.length; i++)
+  for (var i=0; i<lolspace_user_functions.length; i++)
   {
-    var fn = lolspace_user_def_func_names[i];
-    var x = str.indexOf(fn);
-    if (x == -1)
-      continue;
-    
-    var callstr = str.substr(x);
-    callstr = callstr.split(/[ ]+/g);
-    var rep = callstr[0] + '(';
-    rep += callstr.slice(1).join(',') + ')';
-    str = str.substr(0, x) + rep;
+    if (lolspace_user_functions[i].name == funcname)
+      return lolspace_user_functions[i].num_args;
   }
-  return str;
+  return false;
 }
 
-
-function lolspace_sub_other(str)
-{  
-  var a = lolspace_OTHER;
-  for (var i=0; i<a.length; i+=2)
-    str = str.replace(new RegExp(a[i], 'g'), a[i+1]);
-  return str;
-}
-
-function lolspace_sub_control(str)
-{
-  var a = lolspace_CONTROL;
-  for (var i=0; i<a.length; i+=2)
-    str = str.replace(new RegExp(a[i], ''), a[i+1]);
-  return str;
-}
-
-function lolspace_sub_assignment(str)
-{
-  var str1 = new String(str);
-  for (var i=0; i<lolspace_ASSIGNMENT.length; i+=2)
-    str1 = str1.replace(new RegExp(lolspace_ASSIGNMENT[i]), lolspace_ASSIGNMENT[i+1]);
-  
-  return str1;
-  
-}
-
-function lolspace_sub_ops(str, IT)
-{
-  var str1 = new String(str);
-  var last_str = new String(str);
-  var ops = lolspace_MATH_OPS.concat(lolspace_LOGIC_OPS);
-  var x = 0;
-  while (1)
-  {
-    for (var i=0; i<ops.length; i+=2)
-      str1 = str1.replace(new RegExp(ops[i], 'g'), ops[i+1]);
-    if (str1 == last_str)
-      break;
-    last_str = new String(str1);
-    x++
-  }
-  if (x && IT)
-    str1 = 'var IT = ' + str1;
-  return str1;
-}
-
-
-function lolspace_strip_comments(str)
-{
-  str = str.replace(/OBTW[\s\S]*?TLDR/g, '');
-  str = str.replace(/BTW.*/g, '');
-  return str;
-}
-
-function lolspace_sub_concat(str)
-{
-  if (str.indexOf('SMOOSH') == -1)
-    return str;
-  
-  str = str.split(' ');
-  var smooshing = false;
-  var s = ""
-  for (var i=0; i<str.length; i++)
-  {
-    if (smooshing)
-    {
-      if (str[i] == 'AN')
-        continue;
-      if (str[i] == 'MKAY')
-      {
-        smooshing = false;
-        continue;
-      }
-      s += '+' + str[i];
-    }    
-    else
-    {
-      if (str[i] == 'SMOOSH')
-      {
-        s += " \"\"";
-        smooshing = true;
-      }
-      else
-        s += " " + str[i]
-    }
-    
-  }
-  
-  return s;
-  
-}
-
-
-function lolspace_sub_cast(str)
-{
-  var casts = ['TROOF', 'Boolean',
-               'YARN', 'String',
-               'NUMBR', 'parseInt',
-               'NUMBAR', 'Number'];
-  str = str.replace(/(.*) IS NOW A (.*)/g, '$1 R MAEK $1 A $2');
-  
-  if (str.indexOf('MAEK') == -1)
-    return str;
-                    
-  for (var i=0; i<casts.length; i+=2)
-  {
-    var r = new RegExp('MAEK (.*) A ' + casts[i], 'g');
-    str = str.replace(r, casts[i+1] + '($1)');
-  }
-  str = str.replace(/MAEK (.*) A NOOB/g, null);
-  return str;
-
-}
-
-
+// prepares a string of lolcode for parsing
 function lolspace_prepare(str)
 {
+  // we don't really care about hai or kthxbye or includes
   str = str.replace(/HAI.*/g, '');
-  str = str.replace(/KTHXBYE.*/g, '');
-  str = lolspace_strip_comments(str);
+  str = str.replace(/KTHXB(YE|AI).*/g, '');
+  str = str.replace(/CAN HAS .*/g, '');
   
   
+  // strip comments
+  str = str.replace(/OBTW([\s\S]*?)TLDR/g, '');
+  str = str.replace(/BTW.*/g, '');
+    
+  str = str.replace(/[ \t]+/g, ' ');
   
-  str = str.replace(/[ \t]+/g, ' '); 
+  str = str.replace(/[,]/g, '\n');
   
-  str = str.replace(/,/g, '\n');
   
-  str = str.replace(/\n[ ]*WTF\?/g, ' WTF?');
-  str = str.replace(/\.{3}\s+\n/g, ''); 
+  str = str.replace(/\.{3}[ ]*\n/g, ''); 
   
-  var s = str.split(/\r\n|\r|\n/);
-  var s_ = []
-  for (var i=0; i<s.length; i++)
+  str = str.replace(/\r\n|\r|\n/g, '\n');
+  //right trim
+  str = str.replace(/[ ]+\n/g, '\n');  
+  
+  
+  // alias the 'x IS NOW A ' to 'x R MAEK..'
+  str = str.replace(/(.*) IS NOW A (.*)/g, '$1 R MAEK $1 A $2');
+  //alias 'I HAS A .. ITZ .. to 'I HAS A ..\n .. R ..
+  // i.e. separate declaration and assignment
+  str = str.replace(/(I HAS A (.*)) IT[SZ] (.*)/g, '$1\n$2 R $3');
+  
+  
+  // this is totally cheating
+  str = str.replace(/\bWIN\b/g, 'true');
+  str = str.replace(/\bFAIL\b/g, 'false');
+  
+  
+  return str;
+}
+
+// aliases string literals to @x where x is a number >= 0
+// if strip is set to false, this will substitute them back in
+// this also handles escape sequences inside string literals.
+
+function lolspace_do_string_literals(str, strip)
+{
+  if (strip == true || strip == undefined)
   {
-    var line = s[i].replace(/[ ]*$/, '');
-    var trimmed = line.replace(/^[ ]+/, '');
-    if (trimmed.length)
-      s_.push(line);
+    this.aliases = [];
+    this.num_alaises = 0;
+
+    var i = -1;
+    var last_i = 0;
+    var start;
+    var in_str = false;
+    var str_ = "";
+    while ((i = str.indexOf('"', i+1)) !== -1)
+    {
+      if (!in_str)
+      {
+        str_ += str.substr(last_i, i-last_i);
+        in_str = true;
+        start = i;
+      }
+      else
+      {
+        var escapes = 0;
+        var j=i-1;
+        while (j>=0 && str[j--] == ':')
+          escapes++;
+        if (!(escapes % 2))
+        {
+          in_str = false;
+          
+          var quoted = str.substr(start+1, (i-start-1));
+          quoted = quoted.replace(/:([\)>o":]|\(.*?\)|\{.*?\})/g, function($0, $1){
+            // simple escapes
+            switch($1){
+              case ')': return '\\n';
+              case '>': return '\\t';
+              case 'o': return '^g'; //meh
+              case '"': return '\\"';
+              case ':': return ':';
+            }
+            // var interpolation, just concatenate it.
+            if ($1.charAt(0) == '{')
+              return '"+' + $1.substr(1,$1.length-2) + '+"';
+              
+            // hex unicode  
+            if ($1.charAt(0) == '(')
+              return '\\u' + $1.substr(1,$1.length-2);
+           
+            // TODO: named unicode chars, don't know if js provides a shortcut for this?
+            // i'm not typing out all of them. 
+            // http://www.unicode.org/Public/4.1.0/ucd/NamesList.txt
+            return $0;
+          });
+          
+          this.aliases[this.num_alaises] = quoted;
+          str_ += '@' + this.num_alaises++;
+          i++;
+        }
+      }
+      last_i = i;
+    }
+    str_ += str.substr(last_i);
+    
+    return str_;
   }
-  return s_;
+  else
+  {
+    for (var i=this.num_alaises-1; i>=0; i--)
+      str = str.replace('@' + i, '"' + this.aliases[i] + '"');
+    return str;
+  }
+  
+  
+}
+
+/*
+ * tokenises the input string
+ * returns a sequence of tokens and corresponding input string,
+ * as an array, in the form:
+ * 
+ * [
+ *      token1, string1,
+ *      token2, string2,
+ *      token3, string3
+ *      ...
+ * ]
+ * 
+ */
+function lolspace_tokenise(str)
+{
+  var tokens = [];
+  var string = [];
+  for (var i=0; i<str.length; i++)
+  {
+    var str_ = str.substr(i);
+    var match = null;
+    if ( (match = (/^I HAS A(?=\s)/.exec(str_))) )
+      tokens.push('DECLARE');
+    else if( (match = (/^(R|IT[SZ])(?=\s)/.exec(str_))) )
+      tokens.push('ASSIGN');
+    else if( (match = (/^G[EI]MMEH(?=\s)/.exec(str_))) )
+      tokens.push('PROMPT');
+    else if( (match = /^MAEK(?=\s)/.exec(str_)) )
+      tokens.push('CAST');
+    
+    else if( (match = /^(NOOB|YARN|NUMBR|NUMBAR|TROOF)(?=\s)/.exec(str_)) )
+      tokens.push('TYPE');
+    else if( (match = /^(SMALL?E?R|BIGG?E?R) THAN\b/.exec(str_)) )
+      tokens.push('CMP_OP');
+    else if( (match = /^O RLY\?/.exec(str_)) )
+      tokens.push('START_IF');
+    else if ( (match = /^YA RLY\b/.exec(str_)) )
+      tokens.push('IF');
+    else if ( (match = /^MEBBE\b/.exec(str_)) )
+      tokens.push('ELSE_IF');
+    else if ( (match = /^NO WAI\b/.exec(str_)) )
+      tokens.push('ELSE');
+    else if( (match = /^OIC\b/.exec(str_)))
+      tokens.push('END_IF');
+    
+    else if( (match = /^AN\b/.exec(str_)) )
+      tokens.push('COMMA')
+    
+    else if ( (match = /^((\-\s*)?\d+(\.\d+)?|true|false|@\d+)\b/.exec(str_)))
+      tokens.push('LITERAL');
+        
+    // operators, oh joy
+      
+    else if( (match = (/^(((SUM|DIFF|PRODUKT|MOD|QUOSHUNT|BOTH|EITHER|BIGGR|SMALLR|WON) OF)|BOTH SAEM|DIFFRINT)\b/.exec(str_))))
+      tokens.push('BINARY_OP');
+    
+    else if( (match = (/^(ALL|ANY) OF\b/.exec(str_))))
+      tokens.push('NARY_OP');
+    else if( (match = (/^NOT\b/.exec(str_))))
+      tokens.push('NARY_OP');
+    
+    else if ( (match = /^IM IN [YU]R \w+$/.exec(str_)))
+      tokens.push('LOOP_INF');
+    else if( (match = /^IM IN [YU]R [a-zA-Z]\w+/.exec(str_)))
+      tokens.push('LOOP');
+    else if( (match = /^IM OUTTA [YU]R \w+\b/.exec(str_)))
+      tokens.push('END_LOOP');
+    else if( (match = /^(WILE|TILL?)\b/.exec(str_)))
+      tokens.push('LOOP_CONDITION');
+    else if( (match = /^(UPPIN|NERFIN) [YU]R\b/.exec(str_)))
+      tokens.push('LOOP_ACTION');
+    
+    else if ( (match = /^!!*/.exec(str_)))
+      tokens.push('SCREECH');
+    else if ( (match = /^\?/.exec(str_)))
+      tokens.push('QUESTION_MARK');
+    else if( (match = /^UPZ\b/.exec(str_)))
+      tokens.push('INC_OP');
+    
+    else if ( (match = /^VISIBLE\b/.exec(str_)) )
+      tokens.push('STDOUT');
+    
+    else if( (match = /^IZ\b/.exec(str_)))
+      tokens.push('INLINE_IF');
+    else if( (match = /^KTHX\b/.exec(str_)))
+      tokens.push('INLINE_IF_END');
+    else if( (match = /^GTFO\b/.exec(str_)))
+      tokens.push('BREAK');
+    else if( (match = /^WTF\\?\b/.exec(str_)))
+      tokens.push('SWITCH');
+    
+    else if( (match = /^OMG\b/.exec(str_)))
+      tokens.push('SWITCH_CASE');
+    else if( (match = /^OMGWTF\b/.exec(str_)))
+      tokens.push('SWITCH_CASE_DEFAULT');  
+    
+    
+    else if (match = /^SMOOSH\b/.exec(str_))
+      tokens.push('NARY_OP');
+    
+    else if( match = /^MKAY\b/.exec(str_))
+      tokens.push('OP_TERM');
+    
+    else if( (match = (/^HOW DUZ I\b/).exec(str_)) )
+      tokens.push('FUNC_DEF');
+    else if( (match = (/^YR\b/).exec(str_)) )
+      tokens.push('VAR');
+    else if( (match = (/^FOUND\b/).exec(str_)))
+      tokens.push('RETURN');
+    else if( (match = (/^IF U SAY SO\b/).exec(str_)) )
+      tokens.push('FUNC_DEF_END');
+    
+    else if( (match = (/^[a-zA-Z@][a-zA-Z0-9_]*/.exec(str_))) )
+      tokens.push('IDENTIIFER');
+    
+    if (match)
+    {
+      i+=match[0].length-1;
+      string.push(match[0]);
+    }
+    else if ((match = str_.match(/^\S+/)))
+    {
+      lolspace_error('Tokeniser: unrecognised sequence:\n' + str_.match(/^\S+/) + '\n' + str_.substr(i));
+      i+=match[0].length-1;
+    }
+    
+    
+      
+  }
+  if (tokens.length != string.length)
+    lolspace_error('Somehow I ended up with a different number of tokens than matches. This is fatal. Sorry.')    
+  var ret = [];
+  for (var i=0; i<tokens.length; i++)
+  {
+    ret.push(tokens[i]);
+    ret.push(string[i]);
+  }
+  return ret;
 }
 
 
 
-function loljs(str)
+// BIGR THAN and SMALR than are different to other binary ops in that they
+// take their operands on either side. Which is slightly inconvenient
+// as everything else uses prefix notation.
+function lolspace_sub_cmp_op(tokens)
 {
-  lolspace_user_def_func_names = [];
+  var s = tokens[1];
+  if (s.charAt(0) == 'B')
+    return '>' + lolspace_eval_line(tokens.slice(2));
+  else if (s.charAt(0) == 'S')
+    return '<' + lolspace_eval_line(tokens.slice(2));
+  
+  // NOTE: not should be handled in eval_expr, I don't know if this
+  // actually gets called.
+  else if (s == 'NOT')
+    return '!(' + lolspace_eval_line(tokens.slice(2)) + ')';
+}
 
-  // the regexes all rely on values being single words, so we need
-  // to alias the string literals.
-  var aliases = [];
-  var i = -1;
-  var last_i = 0;
-  var start;
-  var in_str = false;
+
+/*
+ * evaluates a lolcode expression or arbitrary arity.
+ * Expressions use prefix notation and may nest.
+ * Also handles nested function calls.
+ * 
+ * bit of a mess.
+ */
+
+function lolspace_eval_expr(tokens)
+{
+  var string = tokens[1];
+  
+  var op_symbols = {
+    'SUM OF': {symbol: '+', nary:2, before:'(', after:')'},
+    'DIFF OF': {symbol: '-', nary:2, before:'(', after:')'},
+    'PRODUKT OF': {symbol: '*', nary:2, before:'(', after:')'},
+    'MOD OF':  {symbol: '%', nary:2, before:'(', after:')'},
+    'QUOSHUNT OF':  {symbol: '/', nary:2, before:'(', after:')'},
+    'BOTH OF':  {symbol: '&&', nary:2, before:'(', after:')'},
+    'EITHER OF':  {symbol: '||', nary:2, before:'(', after:')'},
+    'BOTH SAEM':  {symbol: '==', nary:2, before:'(', after:')'},
+    'DIFFRINT': {symbol: '!=', nary:2, before:'(', after:')'},
+    'BIGGR OF': {symbol: ',', nary:2, before:'(Math.max(', after:'))'},
+    'SMALLR OF': {symbol: ',', nary:2, before:'(Math.min(', after:'))'},
+    
+    'WON OF' : {symbol: ',', nary:2, before:'(lolspace_xor(', after:'))'},
+    
+    'ALL OF': {symbol: ')&&(', nary:-1, before:'((', after:'))'},
+    'ANY OF': {symbol: ')||(', nary:-1, before:'((', after:'))'},
+    'SMOOSH':  {symbol: '+', nary:-1, before:'""+', after:''},
+    'NOT' : { symbol:'', nary:1, before:'!(', after:')'},
+    
+
+    
+    
+  };
+  
+  
+  var stack = [];
+  
   var str_ = "";
-  var num_alaises = 0;
-  while ((i = str.indexOf('"', i+1)) !== -1)
+//   alert(tokens);
+  for (var i=0; i<tokens.length; i+=2)
   {
-    if (!in_str)
+    var s = tokens[i+1];
+    var t= tokens[i];
+    var schedule_pop = false;
+    
+    switch(t)
     {
-      str_ += str.substr(last_i, i-last_i);
-      in_str = true;
-      start = i;
+      case 'BINARY_OP':
+      case 'NARY_OP':
+        if (stack.length)
+        {
+          var st = stack[stack.length-1];
+          
+          str_ += (st.terms)? st.symbol : '';        
+        }
+        
+        var sym = op_symbols[s];
+        // HELLO, CLONE METHOD?
+        var sym_copy = {symbol: sym.symbol, nary: sym.nary, before: sym.before, after: sym.after};
+        
+        sym_copy.terms = 0;
+        str_ += sym_copy.before;
+        stack.push(sym_copy);
+        break;
+      case 'COMMA':
+//         var st = stack[stack.length-1];
+//         str_ += st.symbol;
+        break;
+      case 'OP_TERM':
+//         var sym = stack.pop();
+        schedule_pop = true;
+//         str_ += stack[stack.length-1].after;
+        break;
+      case 'IDENTIIFER':        
+        // THIS IS A HACK.    
+        if (stack.length)
+        {
+          var sym = stack[stack.length-1];
+          str_ += (sym.terms)? sym.symbol : '';
+        }
+        var args = lolspace_func_get_num_args(s);
+        if (args !== false)
+        {
+          var sym = {nary:args, terms:0, symbol:',', before:'', after:')'};
+          stack.push(sym);
+          
+          str_ += s + '(';
+          
+//           var ide = lolspace_eval_identifier(tokens.slice(i), false);
+//           str_ += ide;
+//           i+= args*2;
+        }
+        else
+        {
+
+          str_ += s;      
+          
+          ++sym.terms;
+        }
+        break;
+        
+      case 'LITERAL':
+        var sym = stack[stack.length-1];
+        str_ += (sym.terms)? sym.symbol : '';
+        
+        str_ += s;
+
+        ++sym.terms
+        break;
+        
+      default:
+        lolspace_error('Unexpected token in expression\n' + t + '\n' + s);
     }
-    else
+    if (!stack.length)
+      break;
+    
+    while (1)
     {
-      var escapes = 0;
-      var j=i-1;
-      while (j>=0 && str[j] == '\\')
-        escapes++;
-      if (!(escapes % 2))
+      var sym = stack[stack.length-1];
+      if ((sym.terms >= sym.nary && sym.nary != -1) || schedule_pop)
       {
-        in_str = false;
-        aliases[num_alaises] = str.substr(start+1, (i-start-1));
-        str_ += '@' + num_alaises++;
-        i++;
+        schedule_pop = false;
+        stack.pop();
+        str_ += sym.after;  
+        if(stack.length) stack[stack.length-1].terms++;
+        else break;
       }
+      else
+        break;
     }
-    last_i = i;
+    if (!stack.length)
+      break;
   }
-  str_ += str.substr(last_i);
   
-  
-  var s = lolspace_prepare(str_);
-  
-  
-  // now we sub in the javascript
-  for (var i=0; i<s.length; i++)
+  while (stack.length)
   {
-    var it = true;
-    var assign = false;
-    var control = false;
-    var s__;
-    var s_ = s[i];
-    s_ = lolspace_sub_cast(s_);
-    
-    s_ = lolspace_sub_concat(s_);
-    var ops = false
-    s__ = s_;
-    s_ = lolspace_sub_ops(s_, false);
-    if (s_ != s__)
-      ops = true;    
-  
-    s__ = s_;
-    
-    s_ = lolspace_sub_assignment(s_);
-    
-    if (s_ != s__)
-      assign = true;
-    
-    s_ = lolspace_sub_other(s_);
-    s__ = s_;
-    
-    s_ = lolspace_sub_control(s_);
-
-    if (s_ != s__)
-      control = true;
-    
-    it = !(control || assign);
-    
-    s_ = lolspace_sub_func_call(s_);
-
-    
-    var funcdef = false;
-    s__ = s_;
-    s_ = lolspace_sub_func_def(s_); 
-
-    if (s_ != s__)
-      funcdef = true;
-
-    if (it && ops  && !s_.match(/return/))
-      s_ = "var IT=" + s_;
-
-    if (!control && !funcdef && !s_.match(/;.*$/) && !s_.match(/^\s*$/))
-      s_ += ';';
-
-    s[i] = s_;
+    str_ += stack.pop().after;
   }
-
-  var js = s.join("\n");
   
-  //sub back the string literals
-  for (var i=num_alaises-1; i>=0; i--)
-    js = js.replace('@' + i, '"' + aliases[i] + '"');
+  
+  if (i < tokens.length-2)
+    str_ += lolspace_eval_line(tokens.slice(i+2));
+  
+  
+  
+  return str_ ;
+    
+}
+
+
+function lolspace_eval_identifier(tokens)
+{
+
+  var id = tokens[1];
+  if (!lolspace_is_func(id))
+    
+    return id + lolspace_eval_line(tokens.slice(2));
+  // outsource functions to the expression evaluator.
+  return lolspace_eval_expr(tokens)
+/*
+  var num_args = lolspace_func_get_num_args(id);
+  var call = id + '(';
+  for (i=0; i<num_args; i++)
+  {
+    call += tokens[2 + i*2 + 1] + ',';
+  }
+  call = call.replace(/,$/, '');
+  call += ')';
+  return call + (cont? lolspace_eval_line(tokens.slice(2 + num_args*2)) : '');  
+  */
+}
+
+
+/*
+ * evaluates a line left to right. The line may not be a full
+ * line. If it is definitely a full line, use translate_line.
+ */
+
+function lolspace_eval_line(tokens)
+{
+  if (!tokens.length)
+    return '';
+  var t = tokens[0];
+  
+  switch(t)
+  {
+    
+    case 'BINARY_OP':
+    case 'NARY_OP':  
+      return lolspace_eval_expr(tokens);
+    
+    case 'IDENTIIFER':
+      return lolspace_eval_identifier(tokens);
+    
+    case 'ASSIGN':
+      return '=' + lolspace_eval_line(tokens.slice(2));
+    
+    case 'LITERAL':
+      
+      return tokens[1] + lolspace_eval_line(tokens.slice(2));
+      
+      
+    case 'CAST':
+      // MAEK VAR A TYPE
+      var func = '';
+      var type = tokens[7];
+      var v = tokens[3];
+      switch(type)
+      {
+        case 'YARN': func = 'String'; break;
+        case 'TROOF': func = 'Boolean'; break;
+        case 'NUMBR': func = 'parseInt'; break;
+        case 'NUMBAR': func = 'Number'; break;
+        default: return 'null';
+      }
+      return func + '(' + v + ')' + tokens.slice(8);
+   
+    case 'TYPE': // this is probably a result of the user 
+      // defining a variable called NUMBAR or something,
+      // so we just pass over it.
+      // I think the only other place a TPYE occurs is in
+      // a cast, which is handled elsewhere.
+      return tokens[1] + lolspace_eval_line(tokens.slice(2));
+   
+    case 'QUESTION_MARK':
+      // this is a leftover from IZ X BIGGR THAN Y?, 
+      // we don't care.
+      return lolspace_eval_line(tokens.slice(2));
+      
+    case 'CMP_OP':
+     return lolspace_sub_cmp_op(tokens);
+     
+   default:  
+     lolspace_error("Unknown token " + t);
+     return tokens.slice(2);
+  }
+  
+}
+
+
+/*
+ * parses a non-infinte loop
+ */
+function lolspace_parse_loop(tokens)
+{
+
+  /*
+    our tokens should look something like this:
+     [token]   text
+0    [LOOP] IM IN YR LP
+2    [LOOP_ACTION] UPPIN YR
+4    [IDENTIIFER] COUNTER
+6    [LOOP_CONDITION] WILE
+8    [IDENTIIFER] COUNTER
+10   [CMP_OP] SMALLR THAN
+12   [IDENTIIFER] LIMIT
+   */
+  
+  var action = tokens[5] + (tokens[3].match(/^UPPIN/)? '++' : '--');  
+  var condition = lolspace_eval_line(tokens.slice(8));
+//   alert(condition);
+  if (tokens[7].charAt(0) == 'T') //til
+    condition = '!(' + condition + ')';
+
+    
+  var loop = 'for(var ' + tokens[5] +';' + condition + ';' + action + '){';
+  return loop;
+  
+}
+
+
+
+
+/*
+ * evaluates a function definition
+ */
+function lolspace_eval_func_def(tokens)
+{
+  
+  /*
+   * e.g. tokens:
+   * FUNC_DEF,HOW DUZ I,
+   * IDENTIIFER,ADD,
+   * VAR,YR,
+   * IDENTIIFER,NUM1,
+   * COMMA,AN,
+   * VAR,YR,
+   * IDENTIIFER,NUM2
+   */
+  
+  var f = "function " + tokens[3] + "(";
+  var args = 0;
+  for (var i=4; i<tokens.length; i+=2)
+  {
+    var s = tokens[i+1];
+    var t = tokens[i];
+    if (t == 'VAR' || t == 'COMMA')
+      continue;
+    f += s;
+    args++;
+    f += ',';
+  }
+  f = f.replace(/,+$/, '');
+  f += '){\nvar IT=undefined;\n';
+  lolspace_user_functions.push({name:tokens[3], num_args:args});
+  return f;
+  
+}
+
+/*
+ * top level function for translating a full line into javascript
+ * Call this ONLY if the line is definitely a full line, as 
+ * a lot of commands may exist only as the first token of
+ * a line.
+ */
+function lolspace_translate_line(tokens)
+{
+  if (!tokens.length)
+    return '';
+  
+  var t = tokens[0];    
+  var js = "";
+  switch(t)
+  {
+    case 'BINARY_OP':
+    case 'NARY_OP':  
+      return 'IT=' + lolspace_eval_expr(tokens) + ';';
+      
+    case 'DECLARE': 
+      return ('var ' + tokens[3] + ' = null;');
+    case 'START_IF':
+      return '';
+    case 'IF':
+      return 'if(IT){';
+    case 'ELSE_IF':
+      return '}else if(' + lolspace_eval_line(tokens.slice(2)) + '){';
+    case 'ELSE':
+      return '} else {';
+      
+    case 'END_IF':
+    case 'END_LOOP':
+      return '}';
+    
+    case 'IDENTIIFER':      
+      if (tokens.length >= 2 && tokens[2] != 'ASSIGN')
+        return 'IT = ' + lolspace_eval_identifier(tokens) + ';';
+      else
+        return lolspace_eval_identifier(tokens) + ';';
+
+    case 'PROMPT':
+      return tokens[3] + ' = prompt("' + tokens[3] + '");';
+      
+    case 'STDOUT':
+    
+      var newline = !(tokens[tokens.length-2] == 'SCREECH');
+      var t;
+      if (newline)
+        t = tokens.slice(2);
+      else
+        t = tokens.slice(2, tokens.length-2);
+      return 'lolspace_puts(' + lolspace_eval_line(t)  + ',' + newline +  ');';
+    
+    case 'INC_OP':
+      var v = tokens[3];
+      //  following this var and optionally !!\d
+      if (tokens.length >= 8)
+        v += '+=' + tokens[7] + ';';
+      else
+        v += '++;';
+      return v;
+      break;
+      
+    case 'INLINE_IF':
+      return 'if(' + lolspace_eval_line(tokens.slice(2)) + '){';
+      
+    case 'INLINE_IF_END':
+      return '}';
+    
+    case 'BREAK':
+      return 'break;';
+    case 'LOOP_INF':
+      return 'while(1){';
+    
+    case 'LOOP':
+      return lolspace_parse_loop(tokens);
+      
+    case 'SWITCH':
+      return 'switch(IT){';
+    case 'SWITCH_CASE':
+      return 'case' + tokens[3] + ':';
+    case 'SWITCH_CASE_DEFAULT':
+      return 'default:';
+
+    case 'RETURN':
+      // tokens 3 should be 'YR'
+      return 'return ' + lolspace_eval_line(tokens.slice(4)) + ';';
+    case 'FUNC_DEF':
+      return lolspace_eval_func_def(tokens);
+    case 'FUNC_DEF_END':
+      return 'return (IT==undefined)? null : IT;}';
+      
+      
+    default:
+      return lolspace_eval_line(tokens);
+
+  }
+  
+  
   
   return js;
   
+  
 }
+
+// user interface function.
+// takes a full lolcode program and
+// returns a full javascript program.
+function loljs(str)
+{
+  lolspace_init();
   
+  str = lolspace_prepare(str);
+  str = lolspace_do_string_literals(str, true);
   
-  
+  var s = str.split('\n');
+  var js_out = "var IT;\n";
+  for (var i=0; i<s.length; i++)
+  {
+    var t = lolspace_tokenise(s[i]);
+    var js = lolspace_translate_line(t);
+    js_out += js + "\n";
+  }
+  js_out = lolspace_do_string_literals(js_out, false);
+  return js_out;
+}
