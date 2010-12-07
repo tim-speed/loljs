@@ -659,8 +659,8 @@ function lolspace_parse_loop(tokens)
   if (tokens[7].charAt(0) == 'T') //til
     condition = '!(' + condition + ')';
 
-    
-  var loop = 'for(var ' + tokens[5] +';' + condition + ';' + action + '){';
+  var init = tokens[5] + '= ((typeof ' + tokens[5] + '=="undefined")? 0 :' + tokens[5] + ')';
+  var loop = 'for((' + init + ');'  + condition + ';' + action + '){';
   return loop;
   
 }
