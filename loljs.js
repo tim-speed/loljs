@@ -287,7 +287,9 @@ function lolspace_tokenise(str)
   {
     var str_ = str.substr(i);
     var match = null;
-    if ( (match = (/^I HAS A(?=\s)/.exec(str_))) )
+    if ((match = /^A\b/.exec(str_)))
+      tokens.push('A');
+    else if ( (match = (/^I HAS A(?=\s)/.exec(str_))) )
       tokens.push('DECLARE');
     else if( (match = (/^(R|IT[SZ])(?=\s)/.exec(str_))) )
       tokens.push('ASSIGN');
@@ -656,8 +658,22 @@ function lolspace_eval_line(tokens)
     case 'CAST':
       // MAEK VAR A TYPE
       var func = '';
-      var type = tokens[7];
-      var v = tokens[3];
+      var type = null;
+      
+      // we need to split this for inline casting.
+      var val = [];
+      var i;
+      for (i=2; i<tokens.length; i+=2)
+      {
+        if (tokens[i] == 'A')
+        {
+          i+=2;
+          type = tokens[i+1];
+          break;
+        }
+        val.push(tokens[i], tokens[i+1]);
+      }
+      
       switch(type)
       {
         case 'YARN': func = 'String'; break;
@@ -665,9 +681,10 @@ function lolspace_eval_line(tokens)
         case 'NUMBR': func = 'parseInt'; break;
         case 'NUMBAR': func = 'Number'; break;
         case 'BUKKIT': func = 'lolspace_cast_bukkit'; break;
-        default: return 'null';
+        default: lolspace_error("Cast to unknown type\n" + type);
+                 return;
       }
-      return func + '(' + v + ')' + tokens.slice(8);
+      return func + '(' + lolspace_eval_line(val) + ')' + lolspace_eval_line(tokens.slice(i+2));
    
     case 'TYPE': // this is probably a result of the user 
       // defining a variable called NUMBAR or something,
