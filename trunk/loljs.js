@@ -75,6 +75,19 @@ function lolspace_set_puts(func)
   lolspace_puts_cb = func;
 }
 
+
+function lolspace_chr(n)
+{
+  return String.fromCharCode(n);
+}
+function lolspace_ord(c)
+{
+  return c.charCodeAt(0);
+}
+
+
+
+
 // prints an error which occurred during parsing
 function lolspace_error(errstr)
 {
@@ -113,6 +126,14 @@ function lolspace_func_get_num_args(funcname)
   return false;
 }
 
+
+function lolspace_strip_comments(str)
+{
+  str = str.replace(/OBTW([\s\S]*?)TLDR/g, '');
+  str = str.replace(/BTW.*/g, '');
+  return str;
+}
+
 // prepares a string of lolcode for parsing
 function lolspace_prepare(str)
 {
@@ -121,10 +142,7 @@ function lolspace_prepare(str)
   str = str.replace(/KTHXB(YE|AI).*/g, '');
   str = str.replace(/CAN HAS .*/g, '');
   
-  
-  // strip comments
-  str = str.replace(/OBTW([\s\S]*?)TLDR/g, '');
-  str = str.replace(/BTW.*/g, '');
+
     
   str = str.replace(/[ \t]+/g, ' ');
   
@@ -148,7 +166,6 @@ function lolspace_prepare(str)
   // this is totally cheating
   str = str.replace(/\bWIN\b/g, 'true');
   str = str.replace(/\bFAIL\b/g, 'false');
-  
   
   return str;
 }
@@ -280,7 +297,7 @@ function lolspace_tokenise(str)
     else if( (match = /^AN\b/.exec(str_)) )
       tokens.push('COMMA')
     
-    else if ( (match = /^((\-\s*)?\d+(\.\d+)?|true|false|@\d+)\b/.exec(str_)))
+    else if ( (match = /^((\-\s*)?\d+(\.\d+)?|true|false|@\d+(!\w+){0,2})\b/.exec(str_)))
       tokens.push('LITERAL');
         
     // operators, oh joy
@@ -288,8 +305,12 @@ function lolspace_tokenise(str)
     else if( (match = (/^(((SUM|DIFF|PRODUKT|MOD|QUOSHUNT|BOTH|EITHER|BIGGR|SMALLR|WON) OF)|BOTH SAEM|DIFFRINT)\b/.exec(str_))))
       tokens.push('BINARY_OP');
     
-    else if( (match = (/^(ALL|ANY) OF\b/.exec(str_))))
+    else if( (match = (/^(ALL|ANY|CHR|ORD) OF\b/.exec(str_))))
       tokens.push('NARY_OP');
+    // bukkit assignment
+    else if( (match = (/^GOT\b/.exec(str_)) ))
+      tokens.push('NARY_OP');
+    
     else if( (match = (/^NOT\b/.exec(str_))))
       tokens.push('NARY_OP');
     
@@ -332,7 +353,8 @@ function lolspace_tokenise(str)
     else if (match = /^SMOOSH\b/.exec(str_))
       tokens.push('NARY_OP');
     
-    else if( match = /^MKAY\b/.exec(str_))
+    // Nothing denotes an empty array, so we treat it as a termination
+    else if( match = /^(MKAY|NOTHING?(?: ELSE)?)\b/.exec(str_))
       tokens.push('OP_TERM');
     
     else if( (match = (/^HOW DUZ I\b/).exec(str_)) )
@@ -344,7 +366,7 @@ function lolspace_tokenise(str)
     else if( (match = (/^IF U SAY SO\b/).exec(str_)) )
       tokens.push('FUNC_DEF_END');
     
-    else if( (match = (/^[a-zA-Z@][a-zA-Z0-9_]*/.exec(str_))) )
+    else if( (match = (/^[a-zA-Z@][a-zA-Z0-9_]*(\!\w+){0,2}/.exec(str_))) )
       tokens.push('IDENTIIFER');
     
     if (match)
@@ -391,6 +413,19 @@ function lolspace_sub_cmp_op(tokens)
     return '!(' + lolspace_eval_line(tokens.slice(2)) + ')';
 }
 
+function lolspace_get_var_(token)
+{
+  var value = token[1];
+  var xc = value.split('!').length-1;
+  
+  if (!xc)
+    return value;
+  if (xc == 1)
+    return value.replace(/!/, '[') + ']';
+
+  else
+    return value.replace(/!/, '.slice(').replace(/!/, ',') + ')';
+}
 
 /*
  * evaluates a lolcode expression or arbitrary arity.
@@ -423,9 +458,11 @@ function lolspace_eval_expr(tokens)
     'ANY OF': {symbol: ')||(', nary:-1, before:'((', after:'))'},
     'SMOOSH':  {symbol: '+', nary:-1, before:'""+', after:''},
     'NOT' : { symbol:'', nary:1, before:'!(', after:')'},
+              
+    'GOT' : { symbol:',', nary:-1, before:'[', after:']'},
     
-
-    
+    'CHR OF' : {symbol:'', nary:1, before:'lolspace_chr(', after:')'},
+    'ORD OF' : {symbol:'', nary:1, before:'lolspace_ord(', after:')'}
     
   };
   
@@ -490,7 +527,7 @@ function lolspace_eval_expr(tokens)
         else
         {
 
-          str_ += s;      
+          str_ += lolspace_get_var_([t,s]);      
           
           ++sym.terms;
         }
@@ -499,8 +536,9 @@ function lolspace_eval_expr(tokens)
       case 'LITERAL':
         var sym = stack[stack.length-1];
         str_ += (sym.terms)? sym.symbol : '';
-        
-        str_ += s;
+
+//         str_ += s;
+        str_ += lolspace_get_var_([t,s]);      
 
         ++sym.terms
         break;
@@ -551,9 +589,9 @@ function lolspace_eval_identifier(tokens)
   var id = tokens[1];
   if (!lolspace_is_func(id))
     
-    return id + lolspace_eval_line(tokens.slice(2));
+    return lolspace_get_var_([tokens[0], tokens[1]]) + lolspace_eval_line(tokens.slice(2));
   // outsource functions to the expression evaluator.
-  return lolspace_eval_expr(tokens)
+  return lolspace_eval_expr(tokens);
 /*
   var num_args = lolspace_func_get_num_args(id);
   var call = id + '(';
@@ -593,8 +631,8 @@ function lolspace_eval_line(tokens)
       return '=' + lolspace_eval_line(tokens.slice(2));
     
     case 'LITERAL':
-      
-      return tokens[1] + lolspace_eval_line(tokens.slice(2));
+      return lolspace_eval_identifier(tokens);
+//       return tokens[1] + lolspace_eval_line(tokens.slice(2));
       
       
     case 'CAST':
@@ -738,7 +776,8 @@ function lolspace_translate_line(tokens)
     case 'END_LOOP':
       return '}';
     
-    case 'IDENTIIFER':      
+    case 'IDENTIIFER':
+    case 'LITERAL':
       if (tokens.length >= 2 && tokens[2] != 'ASSIGN')
         return 'IT = ' + lolspace_eval_identifier(tokens) + ';';
       else
@@ -784,7 +823,7 @@ function lolspace_translate_line(tokens)
     case 'SWITCH':
       return 'switch(IT){';
     case 'SWITCH_CASE':
-      return 'case' + tokens[3] + ':';
+      return 'case ' + tokens[3] + ':';
     case 'SWITCH_CASE_DEFAULT':
       return 'default:';
 
@@ -815,9 +854,10 @@ function lolspace_translate_line(tokens)
 function loljs(str)
 {
   lolspace_init();
+  str = lolspace_strip_comments(str);
+  str = lolspace_do_string_literals(str, true);
   
   str = lolspace_prepare(str);
-  str = lolspace_do_string_literals(str, true);
   
   var s = str.split('\n');
   var js_out = "var IT;\n";
