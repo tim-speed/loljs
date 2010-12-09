@@ -86,7 +86,12 @@ function lolspace_ord(c)
 }
 
 
-
+function lolspace_len(x)
+{
+  if (x.length !== undefined)
+    return x.length;
+  return 0;
+}
 
 // prints an error which occurred during parsing
 function lolspace_error(errstr)
@@ -305,7 +310,7 @@ function lolspace_tokenise(str)
     else if( (match = (/^(((SUM|DIFF|PRODUKT|MOD|QUOSHUNT|BOTH|EITHER|BIGGR|SMALLR|WON) OF)|BOTH SAEM|DIFFRINT)\b/.exec(str_))))
       tokens.push('BINARY_OP');
     
-    else if( (match = (/^(ALL|ANY|CHR|ORD) OF\b/.exec(str_))))
+    else if( (match = (/^(ALL|ANY|CHR|ORD|LEN) OF\b/.exec(str_))))
       tokens.push('NARY_OP');
     // bukkit assignment
     else if( (match = (/^GOT\b/.exec(str_)) ))
@@ -462,7 +467,8 @@ function lolspace_eval_expr(tokens)
     'GOT' : { symbol:',', nary:-1, before:'[', after:']'},
     
     'CHR OF' : {symbol:'', nary:1, before:'lolspace_chr(', after:')'},
-    'ORD OF' : {symbol:'', nary:1, before:'lolspace_ord(', after:')'}
+    'ORD OF' : {symbol:'', nary:1, before:'lolspace_ord(', after:')'},
+    'LEN OF' : {symbol:'', nary:1, before:'lolspace_len(', after:')'}
     
   };
   
