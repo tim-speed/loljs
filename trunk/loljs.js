@@ -93,6 +93,18 @@ function lolspace_len(x)
   return 0;
 }
 
+/*
+ * casts a value to array.
+ * If the value is a string, it is split by each character
+ * if not, the result is just an array consisting of the input 
+ */
+function lolspace_cast_bukkit(val)
+{
+  if (typeof val == 'string' || typeof val == 'String')
+    return val.split("");
+  return [val];
+}
+
 // prints an error which occurred during parsing
 function lolspace_error(errstr)
 {
@@ -284,7 +296,7 @@ function lolspace_tokenise(str)
     else if( (match = /^MAEK(?=\s)/.exec(str_)) )
       tokens.push('CAST');
     
-    else if( (match = /^(NOOB|YARN|NUMBR|NUMBAR|TROOF)(?=\s)/.exec(str_)) )
+    else if( (match = /^(NOOB|YARN|NUMBR|NUMBAR|TROOF|BUKKIT)(?=\s)/.exec(str_)) )
       tokens.push('TYPE');
     else if( (match = /^(SMALL?E?R|BIGG?E?R) THAN\b/.exec(str_)) )
       tokens.push('CMP_OP');
@@ -652,6 +664,7 @@ function lolspace_eval_line(tokens)
         case 'TROOF': func = 'Boolean'; break;
         case 'NUMBR': func = 'parseInt'; break;
         case 'NUMBAR': func = 'Number'; break;
+        case 'BUKKIT': func = 'lolspace_cast_bukkit'; break;
         default: return 'null';
       }
       return func + '(' + v + ')' + tokens.slice(8);
