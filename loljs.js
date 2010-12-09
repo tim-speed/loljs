@@ -371,7 +371,7 @@ function lolspace_tokenise(str)
     else if( (match = (/^IF U SAY SO\b/).exec(str_)) )
       tokens.push('FUNC_DEF_END');
     
-    else if( (match = (/^[a-zA-Z@][a-zA-Z0-9_]*(\!\w+){0,2}/.exec(str_))) )
+    else if( (match = (/^[a-zA-Z@][a-zA-Z0-9_]*(\!\w+)*/.exec(str_))) )
       tokens.push('IDENTIIFER');
     
     if (match)
@@ -425,11 +425,11 @@ function lolspace_get_var_(token)
   
   if (!xc)
     return value;
-  if (xc == 1)
-    return value.replace(/!/, '[') + ']';
-
-  else
-    return value.replace(/!/, '.slice(').replace(/!/, ',') + ')';
+  
+  value = value.replace(/!/, '[');
+  value = value.replace(/!/g, '][');
+  value += ']';
+  return value;
 }
 
 /*
@@ -803,10 +803,10 @@ function lolspace_translate_line(tokens)
       return 'lolspace_puts(' + lolspace_eval_line(t)  + ',' + newline +  ');';
     
     case 'INC_OP':
-      var v = tokens[3];
+      var v = lolspace_eval_identifier([tokens[2], tokens[3]]);
       //  following this var and optionally !!\d
       if (tokens.length >= 8)
-        v += '+=' + tokens[7] + ';';
+        v += '+=' + lolspace_eval_line(tokens.slice(6)) + ';';
       else
         v += '++;';
       return v;
