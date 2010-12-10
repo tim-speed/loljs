@@ -60,8 +60,26 @@ function lolspace_xor(op1, op2)
 }
 
 
+function lolspace_prettify_array(array)
+{
+  var str = "";
+  for (var name in array)
+  {
+    var el = array[name];
+    if (el.constructor == Array)
+      str += lolspace_prettify_array(el) + ', ';
+    else
+      str += el + ', ';
+  }
+  
+  str = str.replace(/, $/, '');
+  return '[' + str + ']';
+}
+
 function lolspace_puts(str, newline)
 {
+  if (str.constructor == Array)
+    str = lolspace_prettify_array(str);
   str = "" + str;
   if (lolspace_puts_cb != null)
     lolspace_puts_cb(str, newline);
