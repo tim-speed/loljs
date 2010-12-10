@@ -222,6 +222,11 @@ function lolspace_do_string_literals(str, strip)
           in_str = false;
           
           var quoted = str.substr(start+1, (i-start-1));
+          quoted = quoted.replace(/(\\*)(\n)/g, function($0, $1){
+            if ($1.length % 2)
+              return $0;
+            return "\\n";
+          });
           quoted = quoted.replace(/:([\)>o":]|\(.*?\)|\{.*?\})/g, function($0, $1){
             // simple escapes
             switch($1){
@@ -765,7 +770,7 @@ function lolspace_eval_func_def(tokens)
   {
     var s = tokens[i+1];
     var t = tokens[i];
-    if (t == 'VAR' || t == 'COMMA')
+    if (t != 'IDENTIIFER')
       continue;
     f += s;
     args++;
